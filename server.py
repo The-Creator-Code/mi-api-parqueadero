@@ -2,15 +2,21 @@ from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
+# --- Memoria temporal para los parqueaderos ---
 # Estados posibles: "LIBRE", "OCUPADO", "RESERVADO"
 estado_parqueadero = {
     "p1": "LIBRE",
     "p2": "LIBRE"
 }
 
+# --- Memoria temporal para usuarios registrados ---
+usuarios_registrados = []
+
+
 # ========================================================
-# REGLA DE NEGOCIO: El ESP32 reporta el estado físico
+# 1. CONTROL DE PARQUEADEROS (Telemetría ESP32 y App)
 # ========================================================
+
 @app.route('/api/estacionamiento', methods=['POST'])
 def recibir_datos():
     global estado_parqueadero
@@ -42,8 +48,9 @@ def entregar_datos():
 
 
 # ========================================================
-# NUEVA RUTA: Reservar un espacio desde la App Móvil
+# 2. ACCIÓN: Reservar un espacio desde la App Móvil
 # ========================================================
+
 @app.route('/api/reservar', methods=['POST'])
 def reservar_parqueadero():
     global estado_parqueadero
@@ -65,6 +72,52 @@ def reservar_parqueadero():
             "status": "error", 
             "message": f"No se puede reservar. El espacio está {estado_parqueadero[parqueadero]}."
         }), 400
+
+
+# ========================================================
+# 3. ACCIÓN: Registro de Usuarios (Modo Offline-First)
+# ========================================================
+
+@app.route('/api/registro', methods=['POST'])
+def registrar_usuario():
+    global usuarios_registrados
+    data = request.json
+    
+    # Validar que el JSON contenga todos los campos obligatorios
+    campos_requeridos = ['nombre', 'correo', 'contrasena', 'tipo_usuario']
+    if not data or not all(campo in data for campo in campos_requeridos):
+        return jsonify({
+            "status": "error", 
+            "message": "Datos incompletos. Se requiere: nombre, correo, contrasena y tipo_usuario."
+        }), 400
+        
+    # Estructurar el nuevo registro
+    nuevo_usuario = {
+        "nombre": data.get('nombre'),
+        "correo": data.get('correo'),
+        "contrasena": data.get('contrasena'),
+        "tipo_usuario": data.get('tipo_usuario')
+    }
+    
+    # Almacenar en la lista interna
+    usuarios_registrados.append(nuevo_usuario)
+    print(f"\n[NUBE] ¡Usuario Sincronizado! -> {nuevo_usuario['nombre']} ({nuevo_usuario['tipo_usuario']})")
+    
+    return jsonify({
+        "status": "sincronizado", 
+        "message": "Usuario registrado exitosamente en la nube."
+    }), 201
+
+
+# ========================================================
+# 4. CONSULTA: Ver Usuarios Registrados
+# ========================================================
+
+@app.route('/api/usuarios', methods=['GET'])
+def obtener_usuarios():
+    # Ahora sí, aquí está la función para listar los usuarios en formato JSON
+    return jsonify(usuarios_registrados), 200
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
